@@ -55,14 +55,19 @@ def main():
 
         if (ratio > 0.2 and ratio < 1.8):
             # Predicted AUC for each cell line (all for the same drug)
-            predicted = np.empty(all_inputs[0].shape)
-            mean_sq_err = np.empty(all_inputs[0].shape)
+            predicted_lasso = np.empty(all_inputs[0].shape)
+            predicted_ridge = np.empty(all_inputs[0].shape)
+            predicted_knn = np.empty(all_inputs[0].shape)
+            mean_sq_err_lasso = np.empty(all_inputs[0].shape)
+            mean_sq_err_ridge = np.empty(all_inputs[0].shape)
+            mean_sq_err_knn = np.empty(all_inputs[0].shape)
 
-            # k = cross_validate_select_k(all_inputs, all_labels, drug_names, drug, False)
+            k = cross_validate_select_k(all_inputs, all_labels, drug_names, drug, False)
             # print "Drug %s: k = %d" % (drug_names[drug], k)
 
-            alpha = cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, 'lasso', False)
-            print "Drug %s: alpha = %3f" % (drug_names[drug], alpha)
+            alpha_lasso = cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, 'lasso', False)
+            alpha_ridge = cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, 'ridge', False)
+            # print "Drug %s: alpha = %3f" % (drug_names[drug], alpha)
 
             #Leave one out cross validation
             for i in range(len(all_inputs[0])):
@@ -75,16 +80,22 @@ def main():
                 valid_labels = all_labels[fold_identity]
 
                 # Create linear regression object
-                model = linear_model.Lasso(alpha=alpha)
-                # model = linear_model.Ridge(alpha=0.1)
-                # model = KNeighborsRegressor(n_neighbors=k, weights='distance')
-                model.fit(train_inputs, train_labels)
+                model_lasso = linear_model.Lasso(alpha=alpha_lasso)
+                model_ridge = linear_model.Ridge(alpha=alpha_ridge)
+                model_knn = KNeighborsRegressor(n_neighbors=k, weights='distance')
+                model_lasso.fit(train_inputs, train_labels)
+                model_ridge.fit(train_inputs, train_labels)
+                model_knn.fit(train_inputs, train_labels)
 
                 #print('Coefficients: \n', model.coef_)
 
-                predicted[i] = model.predict(valid_inputs)
+                predicted_lasso[i] = model_lasso.predict(valid_inputs)
+                predicted_ridge[i] = model_ridge.predict(valid_inputs)
+                predicted_knn[i] = model_knn.predict(valid_inputs)
 
-                mean_sq_err[i] = (np.mean(predicted[i] - valid_labels) ** 2)
+                mean_sq_err_lasso[i] = (np.mean(predicted_lasso[i] - valid_labels) ** 2)
+                mean_sq_err_ridge[i] = (np.mean(predicted_ridge[i] - valid_labels) ** 2)
+                mean_sq_err_knn[i] = (np.mean(predicted_knn[i] - valid_labels) ** 2)
 
 
             # Plot outputs
@@ -151,7 +162,7 @@ def cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, model_
     #num_alpha_to_test = 10
     start = 0.01
     end = 1
-    test_range = [0.005, 0.0075, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0]
+    test_range = [0.005, 0.0075, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 5.0, 10.0]
     sum_mean_sq_err = np.empty(len(test_range))
 
     for alpha in range(len(test_range)):
