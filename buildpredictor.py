@@ -58,8 +58,11 @@ def main():
             predicted = np.empty(all_inputs[0].shape)
             mean_sq_err = np.empty(all_inputs[0].shape)
 
-            k = cross_validate_select_k(all_inputs, all_labels, drug_names, drug, False)
-            print "Drug %s: k = %d" % (drug_names[drug], k)
+            # k = cross_validate_select_k(all_inputs, all_labels, drug_names, drug, False)
+            # print "Drug %s: k = %d" % (drug_names[drug], k)
+
+            alpha = cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, 'lasso', False)
+            print "Drug %s: alpha = %3f" % (drug_names[drug], alpha)
 
             #Leave one out cross validation
             for i in range(len(all_inputs[0])):
@@ -72,8 +75,9 @@ def main():
                 valid_labels = all_labels[fold_identity]
 
                 # Create linear regression object
-                #model = linear_model.Ridge(alpha=0.1)
-                model = KNeighborsRegressor(n_neighbors=k, weights='distance')
+                model = linear_model.Lasso(alpha=alpha)
+                # model = linear_model.Ridge(alpha=0.1)
+                # model = KNeighborsRegressor(n_neighbors=k, weights='distance')
                 model.fit(train_inputs, train_labels)
 
                 #print('Coefficients: \n', model.coef_)
@@ -129,7 +133,7 @@ def cross_validate_select_k(all_inputs, all_labels, drug_names, drug, doPlot):
 
         sum_mean_sq_err[k] = sum(mean_sq_err)
 
-    if (doPlot):
+    if doPlot:
         plt.scatter(range(1, num_k_to_test+1), sum_mean_sq_err)
         plt.title("%s Hyperparameter selection" % drug_names[drug])
         plt.xlabel("K (# of neighbours)")
@@ -140,6 +144,55 @@ def cross_validate_select_k(all_inputs, all_labels, drug_names, drug, doPlot):
     k_min = np.argmin(sum_mean_sq_err) + 1
 
     return k_min
+
+
+def cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, model_type, doPlot):
+
+    #num_alpha_to_test = 10
+    start = 0.01
+    end = 1
+    test_range = [0.005, 0.0075, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0]
+    sum_mean_sq_err = np.empty(len(test_range))
+
+    for alpha in range(len(test_range)):
+
+        predicted = np.empty(all_inputs[0].shape)
+        mean_sq_err = np.empty(all_inputs[0].shape)
+
+        # Leave one out cross validation
+        for i in range(len(all_inputs[0])):
+            fold_identity = np.array(np.zeros(len(all_inputs[0])), dtype=bool)
+            fold_identity[i] = True
+
+            train_inputs = all_inputs[:, ~fold_identity].T
+            train_labels = all_labels[~fold_identity]
+            valid_inputs = all_inputs[:, fold_identity].T
+            valid_labels = all_labels[fold_identity]
+
+            if model_type == 'lasso':
+                model = linear_model.Lasso(alpha=test_range[alpha])
+            else:
+                model = linear_model.Ridge(alpha=test_range[alpha])
+
+            model.fit(train_inputs, train_labels)
+
+            predicted[i] = model.predict(valid_inputs)
+
+            mean_sq_err[i] = (np.mean(predicted[i] - valid_labels) ** 2)
+
+        sum_mean_sq_err[alpha] = sum(mean_sq_err)
+
+    if (doPlot):
+        plt.scatter(test_range, sum_mean_sq_err)
+        plt.title("%s Hyperparameter selection" % drug_names[drug])
+        plt.xlabel("alpha (regularization strength)")
+        plt.ylabel("Sum of Mean Squared Error")
+        plt.savefig('drug%d_hyperparam_alpha_%s.png' % (drug + 1, model_type))
+        plt.close()
+
+    alpha_min = test_range[np.argmin(sum_mean_sq_err)]
+
+    return alpha_min
 
 
 if __name__ == '__main__':
