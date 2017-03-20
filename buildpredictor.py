@@ -99,6 +99,7 @@ def main():
 
 
             # Plot outputs
+            predicted = np.mean(np.array([predicted_lasso, predicted_ridge, predicted_knn]), axis=0)
             fit = np.polyfit(all_labels, predicted, deg=1)
             if (fit[0] > 0.2 and fit[0] < 1.8):
                 plt.scatter(all_labels, predicted, color='black')
