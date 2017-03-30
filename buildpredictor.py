@@ -5,9 +5,9 @@ from sklearn.neighbors import KNeighborsRegressor
 import matplotlib.pyplot as plt
 
 
-def load_data():
+def load_train_data():
     auc = np.genfromtxt('GDSC1000_breast_auc.txt', delimiter=',')
-    expr = np.genfromtxt('GDSC1000expression_breast.txt', delimiter=',')
+    expr = np.genfromtxt('GDSC1000expression_breast_logged.txt', delimiter=',')
 
     with open('cell_names.txt', 'r') as myfile:
         cell_names = myfile.readlines()
@@ -27,10 +27,23 @@ def load_data():
     return auc, expr, cell_names, feature_names, drug_names
 
 
-def main():
+def load_test_data():
+    test_data = np.genfromtxt('top_898_genes_e12_orderedbycluster.txt', delimiter=',')
 
+    with open('top_898_genes_e12_orderedbycluster_cellnames.txt', 'r') as myfile:
+        test_data_cell_names = myfile.readlines()
+    for line in range(len(test_data_cell_names)):
+        test_data_cell_names[line] = test_data_cell_names[line].replace('\n', '').replace('"', '')
+
+    return test_data, test_data_cell_names
+
+
+def main():
     # Load data
-    (auc, expr, cell_names, feature_names, drug_names) = load_data()
+    (auc, expr, cell_names, feature_names, drug_names) = load_train_data()
+    test_data, test_data_cell_names = load_test_data()
+
+    e12_predicted = np.zeros([len(drug_names), len(test_data[0])])
 
     # Remove columns which are just NA (last 2 cell lines)
     expr = np.delete(expr, 51, axis=1)
@@ -62,8 +75,12 @@ def main():
             mean_sq_err_ridge = np.empty(all_inputs[0].shape)
             mean_sq_err_knn = np.empty(all_inputs[0].shape)
 
+            e12_predicted_lasso = np.empty([len(drug_names), len(test_data[0])])
+            e12_predicted_ridge = np.empty([len(drug_names), len(test_data[0])])
+            e12_predicted_knn = np.empty([len(drug_names), len(test_data[0])])
+
             k = cross_validate_select_k(all_inputs, all_labels, drug_names, drug, False)
-            # print "Drug %s: k = %d" % (drug_names[drug], k)
+            print "Drug %s: k = %d" % (drug_names[drug], k)
 
             alpha_lasso = cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, 'lasso', False)
             alpha_ridge = cross_validate_select_alpha(all_inputs, all_labels, drug_names, drug, 'ridge', False)
@@ -97,24 +114,49 @@ def main():
                 mean_sq_err_ridge[i] = (np.mean(predicted_ridge[i] - valid_labels) ** 2)
                 mean_sq_err_knn[i] = (np.mean(predicted_knn[i] - valid_labels) ** 2)
 
+            for sample in range(len(test_data[0])):
+                e12_predicted_lasso[drug, sample] = model_lasso.predict(test_data[:, sample].reshape(-1, 1).T)
+                e12_predicted_ridge[drug, sample] = model_ridge.predict(test_data[:, sample].reshape(-1, 1).T)
+                e12_predicted_knn[drug, sample] = model_knn.predict(test_data[:, sample].reshape(-1, 1).T)
 
-            # Plot outputs
-            predicted = np.mean(np.array([predicted_lasso, predicted_ridge, predicted_knn]), axis=0)
-            fit = np.polyfit(all_labels, predicted, deg=1)
-            if (fit[0] > 0.2 and fit[0] < 1.8):
-                plt.scatter(all_labels, predicted, color='black')
-                plt.plot(all_labels, fit[0] * all_labels + fit[1], color='grey')
-                plt.title("%s" % drug_names[drug])
-                plt.xlabel("Ground truth AUC")
-                plt.ylabel("Predicted AUC")
-                plt.savefig('drug%d.png' % (drug + 1))
-                plt.close()
-                #plt.plot(valid_inputs, model.predict(valid_inputs), color='blue', linewidth=3)
+            e12_predicted[drug, :] = np.mean(np.array([e12_predicted_lasso[drug, :], e12_predicted_ridge[drug, :],
+                                                  e12_predicted_knn[drug, :]]), axis=0)
+            #print(e12_predicted[drug, :])
+            mean_sq_err = np.mean([np.mean(mean_sq_err_lasso), np.mean(mean_sq_err_ridge), np.mean(mean_sq_err_knn)])
 
-                #plt.xticks(())
-                #plt.yticks(())
+            t = np.arange(1, len(test_data[0])+1)
+            # plt.plot(t, e12_predicted[drug, :], 'k--', t, e12_predicted_lasso[drug, :], 'r.', t,
+            #                             e12_predicted_ridge[drug, :], 'b.', t, e12_predicted_knn[drug, :], 'g.')
+            label_size = 6
+            plt.rcParams['xtick.labelsize'] = label_size
+            plt.errorbar(t, e12_predicted[drug, :], color='#0058A2', yerr=mean_sq_err, ecolor='#AF2F2A', elinewidth='0.5')
+            plt.xticks(t, test_data_cell_names, rotation='vertical', )
+            plt.subplots_adjust(bottom=0.25)
+            plt.title("%s" % drug_names[drug])
+            plt.savefig('drug%d.png' % (drug + 1))
+            plt.close()
+    np.savetxt('e12_predicted', e12_predicted, delimiter=',')
+            # # Plot outputs
+            # predicted = np.mean(np.array([predicted_lasso, predicted_ridge, predicted_knn]), axis=0)
+            # fit = np.polyfit(all_labels, predicted, deg=1)
+            # if fit[0] > 0.2 and fit[0] < 1.8:
+            #     plt.scatter(all_labels, predicted, color='black')
+            #     plt.plot(all_labels, fit[0] * all_labels + fit[1], color='grey')
+            #     plt.title("%s" % drug_names[drug])
+            #     plt.xlabel("Ground truth AUC")
+            #     plt.ylabel("Predicted AUC")
+            #     plt.savefig('drug%d.png' % (drug + 1))
+            #     plt.close()
 
-                #plt.show()
+
+# function to train - output = list of viable drugs, and hyperparameters for ridge, lasso, knn
+# function to test - input is output from train, output is auc for each cell under each drug
+            # plot auc of each cell - one figure per drug
+    # test_data = load_test_data()
+    # for i in range(len(test_data[0])):
+    #     for drug in range(len(drug_names)):
+
+
 
 
 def cross_validate_select_k(all_inputs, all_labels, drug_names, drug, doPlot):
